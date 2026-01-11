@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { HOT_TOPICS_LIST, HotTopic } from '../constants';
 
 type CategoryType = 'Geral' | 'Clínica Médica' | 'Cirurgia Geral' | 'Ginecologia e Obstetrícia' | 'Pediatria' | 'Medicina Preventiva';
@@ -10,18 +10,18 @@ const HotTopics: React.FC = () => {
   const [topics, setTopics] = useState<HotTopic[]>([]);
   const [isManageMode, setIsManageMode] = useState(false);
   
-  // Estados para edição/adição
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: '', area: '' });
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTopicForm, setNewTopicForm] = useState({ name: '', area: '', category: 'Clínica Médica' as CategoryType });
 
+  // Keyboard navigation
+  const [focusedTopicName, setFocusedTopicName] = useState<string | null>(null);
+
   useEffect(() => {
-    // Carregar progresso (checks)
     const savedChecks = localStorage.getItem('medstudy_hot_checked');
     if (savedChecks) setCheckedItems(JSON.parse(savedChecks));
 
-    // Carregar temas customizados ou usar os padrões
     const savedTopics = localStorage.getItem('medstudy_custom_hot_topics');
     if (savedTopics) {
       setTopics(JSON.parse(savedTopics));
@@ -29,6 +29,37 @@ const HotTopics: React.FC = () => {
       setTopics(HOT_TOPICS_LIST);
     }
   }, []);
+
+  const filteredTopics = useMemo(() => 
+    activeCategory === 'Geral' ? topics : topics.filter(t => t.category === activeCategory),
+  [topics, activeCategory]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+      if (isManageMode) return;
+
+      const currentIdx = filteredTopics.findIndex(t => t.name === focusedTopicName);
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIdx = (currentIdx + 1) % filteredTopics.length;
+        setFocusedTopicName(filteredTopics[nextIdx].name);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevIdx = (currentIdx - 1 + filteredTopics.length) % filteredTopics.length;
+        setFocusedTopicName(filteredTopics[prevIdx].name);
+      } else if (e.key === ' ') {
+        if (focusedTopicName) {
+          e.preventDefault();
+          toggleCheck(focusedTopicName);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedTopicName, filteredTopics, isManageMode]);
 
   const saveTopics = (newTopics: HotTopic[]) => {
     setTopics(newTopics);
@@ -91,13 +122,11 @@ const HotTopics: React.FC = () => {
     { id: 'Medicina Preventiva', label: 'Prev', icon: '🏥', color: 'indigo' },
   ];
 
-  const filteredTopics = activeCategory === 'Geral' ? topics : topics.filter(t => t.category === activeCategory);
   const completedAllCount = Object.values(checkedItems).filter(Boolean).length;
   const totalAllCount = topics.length;
   const progressPercent = totalAllCount > 0 ? Math.round((completedAllCount / totalAllCount) * 100) : 0;
   
-  const categoryTopics = activeCategory === 'Geral' ? topics : filteredTopics;
-  const categoryCompletedCount = categoryTopics.filter(t => checkedItems[t.name]).length;
+  const categoryCompletedCount = filteredTopics.filter(t => checkedItems[t.name]).length;
 
   const getThemeColor = (category?: string) => {
     const cat = category || activeCategory;
@@ -106,7 +135,6 @@ const HotTopics: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-      {/* Header Estilizado */}
       <div className={`bg-gradient-to-br from-gray-900 via-gray-800 to-black p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden transition-all duration-700`}>
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
@@ -115,9 +143,7 @@ const HotTopics: React.FC = () => {
               <h2 className="text-4xl font-black tracking-tight">CERMAM Hot Topics</h2>
             </div>
             <p className="text-gray-300 font-medium max-w-xl text-lg opacity-90">
-              {activeCategory === 'Geral' 
-                ? 'Visualização completa de todos os temas de maior recorrência.' 
-                : `Temas de maior recorrência histórica em ${activeCategory}.`}
+              Visualização de temas estratégicos. Use as setas ⬆️⬇️ e Espaço para marcar.
             </p>
           </div>
           
@@ -133,7 +159,6 @@ const HotTopics: React.FC = () => {
         <div className="absolute -top-12 -right-12 w-80 h-80 bg-orange-600/10 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Toolbar / Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="grid grid-cols-3 md:grid-cols-6 gap-2 flex-1">
           {categories.map((cat) => (
@@ -176,19 +201,6 @@ const HotTopics: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Form (só visível em modo manage) */}
-      {isManageMode && !showAddForm && (
-        <button 
-          onClick={() => {
-            setShowAddForm(true);
-            setNewTopicForm({...newTopicForm, category: activeCategory === 'Geral' ? 'Clínica Médica' : activeCategory});
-          }}
-          className="w-full py-4 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-3xl text-gray-400 font-bold hover:border-orange-300 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-all animate-in fade-in"
-        >
-          + Adicionar Novo Tema à Lista
-        </button>
-      )}
-
       {showAddForm && (
         <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-900/30 p-6 rounded-3xl space-y-4 animate-in slide-in-from-top-4">
           <h4 className="font-bold text-orange-800 dark:text-orange-400 text-sm uppercase">Novo Tema</h4>
@@ -224,7 +236,6 @@ const HotTopics: React.FC = () => {
         </div>
       )}
 
-      {/* List Area */}
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-gray-100 dark:border-slate-800 shadow-xl p-8 relative overflow-hidden transition-colors">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
@@ -235,11 +246,11 @@ const HotTopics: React.FC = () => {
               <h3 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tight">
                 {activeCategory === 'Geral' ? 'Visão Geral do Edital' : activeCategory}
               </h3>
-              <p className="text-xs text-gray-400 font-bold">{isManageMode ? 'Modo de Gerenciamento Global' : 'Acompanhamento de Temas Estratégicos'}</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase">⌨️ Use as Setas ⬆️⬇️ e Espaço</p>
             </div>
           </div>
           <div className={`px-4 py-2 bg-${getThemeColor()}-50 dark:bg-${getThemeColor()}-900/20 rounded-xl text-xs font-black text-${getThemeColor()}-600 dark:text-${getThemeColor()}-400 border border-${getThemeColor()}-100 dark:border-${getThemeColor()}-800`}>
-            {categoryCompletedCount} / {categoryTopics.length} ITENS
+            {categoryCompletedCount} / {filteredTopics.length} ITENS
           </div>
         </div>
 
@@ -248,15 +259,22 @@ const HotTopics: React.FC = () => {
             const realIdx = topics.findIndex(t => t === topic);
             const isEditing = editingIndex === realIdx;
             const topicColor = getThemeColor(topic.category);
+            const isFocused = focusedTopicName === topic.name;
 
             return (
               <div 
                 key={`${topic.name}-${idx}`} 
-                onClick={() => toggleCheck(topic.name)}
+                onClick={() => {
+                  toggleCheck(topic.name);
+                  setFocusedTopicName(topic.name);
+                }}
+                onMouseEnter={() => setFocusedTopicName(topic.name)}
                 className={`break-inside-avoid mb-3 flex items-start gap-4 p-4 rounded-2xl border transition-all cursor-pointer group group/item ${
-                  checkedItems[topic.name] && !isManageMode
-                    ? `bg-${topicColor}-50/30 dark:bg-${topicColor}-900/10 border-${topicColor}-100 dark:border-${topicColor}-800/50 shadow-sm` 
-                    : 'bg-gray-50/50 dark:bg-slate-800/30 border-transparent hover:border-gray-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md'
+                  isFocused 
+                    ? `ring-4 ring-${topicColor}-500/30 border-${topicColor}-400 bg-white dark:bg-slate-800 shadow-xl scale-[1.02] z-10` 
+                    : checkedItems[topic.name] && !isManageMode
+                      ? `bg-${topicColor}-50/30 dark:bg-${topicColor}-900/10 border-${topicColor}-100 dark:border-${topicColor}-800/50 shadow-sm opacity-60` 
+                      : 'bg-gray-50/50 dark:bg-slate-800/30 border-transparent hover:border-gray-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800'
                 }`}
               >
                 {isEditing ? (
@@ -294,53 +312,18 @@ const HotTopics: React.FC = () => {
                         }`}>
                           {topic.area}
                         </p>
-                        {activeCategory === 'Geral' && (
-                          <span className={`text-[8px] font-black px-1.5 rounded-full bg-${topicColor}-100 dark:bg-${topicColor}-900/30 text-${topicColor}-700 dark:text-${topicColor}-300 border border-${topicColor}-200 dark:border-${topicColor}-800/50 uppercase`}>
-                            {topic.category.split(' ')[0]}
-                          </span>
-                        )}
                       </div>
                       <p className={`text-sm font-bold leading-tight transition-all ${
-                        checkedItems[topic.name] && !isManageMode ? 'text-gray-400 dark:text-slate-600 line-through' : 'text-gray-800 dark:text-slate-200'
+                        checkedItems[topic.name] && !isManageMode ? 'text-gray-400 dark:text-slate-600 line-through font-medium' : 'text-gray-800 dark:text-slate-200'
                       }`}>
                         {topic.name}
                       </p>
                     </div>
-                    {isManageMode && (
-                      <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => startEditFromList(topic)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg">✏️</button>
-                        <button onClick={() => handleDeleteTopicFromList(topic)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">🗑️</button>
-                      </div>
-                    )}
                   </>
                 )}
               </div>
             );
           })}
-        </div>
-        {filteredTopics.length === 0 && (
-          <div className="py-20 text-center text-gray-400 flex flex-col items-center">
-            <span className="text-4xl mb-2">📂</span>
-            <p className="font-bold">Nenhum tema encontrado.</p>
-            <p className="text-xs">Adicione novos temas ou resete para o padrão.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Footer Box */}
-      <div className={`rounded-[2.5rem] p-10 text-white flex flex-col md:flex-row items-center gap-10 shadow-2xl transition-all duration-500 bg-gray-900 border-b-8 border-${getThemeColor()}-600`}>
-        <div className={`w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center text-5xl shrink-0 rotate-3 border border-white/10 shadow-2xl`}>
-          🎯
-        </div>
-        <div>
-          <h4 className="text-2xl font-black mb-3 italic">Estratégia CERMAM</h4>
-          <p className="text-gray-400 leading-relaxed font-medium">
-            Esta lista foi construída baseada na incidência histórica. Ao marcar um item, você não apenas concluiu um estudo, mas garantiu pontos preciosos em temas que a banca ama cobrar. Mantenha o foco nos itens vermelhos e azuis!
-          </p>
-          <div className="mt-6 flex flex-wrap gap-2">
-            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 border border-white/10 text-${getThemeColor()}-400`}>#FocoCermam</span>
-            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 border border-white/10 text-${getThemeColor()}-400`}># ChecklistGeral</span>
-          </div>
         </div>
       </div>
     </div>

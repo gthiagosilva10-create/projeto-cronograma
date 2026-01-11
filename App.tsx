@@ -32,6 +32,9 @@ const App: React.FC = () => {
   const [orderedMonthIds, setOrderedMonthIds] = useState<string[]>([]);
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
   
+  const [tabOrder, setTabOrder] = useState<string[]>(['dashboard', 'schedule', 'hot-topics', 'topics', 'flashcards', 'edital', 'videos', 'exams', 'summaries', 'notes', 'assistant', 'portal']);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  
   const [generalNotes, setGeneralNotes] = useState('');
   
   const [selectedMonthId, setSelectedMonthId] = useState(() => {
@@ -96,6 +99,8 @@ const App: React.FC = () => {
     const savedMonthlyPlans = localStorage.getItem('medstudy_monthly_plans');
     const savedMonthOrder = localStorage.getItem('medstudy_month_order');
     const savedCollapsed = localStorage.getItem('medstudy_month_collapsed');
+    const savedTabOrder = localStorage.getItem('medstudy_tab_order');
+    const savedSidebarCollapsed = localStorage.getItem('medstudy_sidebar_collapsed');
     const savedGeneralNotes = localStorage.getItem('medstudy_general_notes');
     const savedColor = localStorage.getItem('medstudy_primary_color');
     const savedUserName = localStorage.getItem('medstudy_user_name');
@@ -133,6 +138,8 @@ const App: React.FC = () => {
     if (savedMonthlyPlans) setMonthlyPlans(JSON.parse(savedMonthlyPlans));
     if (savedMonthOrder) setOrderedMonthIds(JSON.parse(savedMonthOrder));
     if (savedCollapsed) setCollapsedMonths(JSON.parse(savedCollapsed));
+    if (savedTabOrder) setTabOrder(JSON.parse(savedTabOrder));
+    if (savedSidebarCollapsed) setIsSidebarCollapsed(savedSidebarCollapsed === 'true');
     if (savedGeneralNotes) setGeneralNotes(savedGeneralNotes);
 
     if (savedTabLabels) {
@@ -182,34 +189,36 @@ const App: React.FC = () => {
     localStorage.setItem('medstudy_tab_labels', JSON.stringify(updatedLabels));
   };
 
-  const handleUpdateDocs = (newDocs: CurriculumDoc[]) => {
-    setDocs(newDocs);
-    localStorage.setItem('medstudy_docs', JSON.stringify(newDocs));
+  const handleUpdateTabOrder = (newOrder: string[]) => {
+    setTabOrder(newOrder);
+    localStorage.setItem('medstudy_tab_order', JSON.stringify(newOrder));
   };
 
-  const handleUpdateFlashcards = (newFlash: Flashcard[]) => {
-    setFlashcards(newFlash);
-    localStorage.setItem('medstudy_flashcards', JSON.stringify(newFlash));
+  const handleToggleSidebar = () => {
+    const newState = !isSidebarCollapsed;
+    setIsSidebarCollapsed(newState);
+    localStorage.setItem('medstudy_sidebar_collapsed', String(newState));
   };
 
+  // --- Handlers for missing functions ---
+
+  // Fix: Added handleToggleTopicStatus
   const handleToggleTopicStatus = (topicId: string) => {
     if (topicId.startsWith('hot_')) {
-      const index = parseInt(topicId.replace('hot_', ''));
-      const topic = hotTopics[index];
-      if (topic) {
-        const newChecks = { ...hotTopicChecks, [topic.name]: !hotTopicChecks[topic.name] };
-        setHotTopicChecks(newChecks);
-        localStorage.setItem('medstudy_hot_checked', JSON.stringify(newChecks));
-      }
+      const index = parseInt(topicId.split('_')[1]);
+      const topicName = hotTopics[index].name;
+      const newChecks = { ...hotTopicChecks, [topicName]: !hotTopicChecks[topicName] };
+      setHotTopicChecks(newChecks);
+      localStorage.setItem('medstudy_hot_checked', JSON.stringify(newChecks));
     } else {
       const newAreas = areas.map(area => ({
         ...area,
-        topics: area.topics.map(topic => {
-          if (topic.id === topicId) {
-            const isCompleted = topic.status === StudyStatus.COMPLETED || topic.status === StudyStatus.REVIEWED;
-            return { ...topic, status: isCompleted ? StudyStatus.NOT_STARTED : StudyStatus.COMPLETED };
+        topics: area.topics.map(t => {
+          if (t.id === topicId) {
+            const newStatus = t.status === StudyStatus.COMPLETED ? StudyStatus.NOT_STARTED : StudyStatus.COMPLETED;
+            return { ...t, status: newStatus };
           }
-          return topic;
+          return t;
         })
       }));
       setAreas(newAreas);
@@ -217,9 +226,10 @@ const App: React.FC = () => {
     }
   };
 
+  // Fix: Added handleAddTopic
   const handleAddTopic = (areaId: string, name: string, subArea?: string) => {
     const newTopic: Topic = {
-      id: `${areaId}-${Date.now()}`,
+      id: `custom-${Date.now()}`,
       name,
       subArea,
       status: StudyStatus.NOT_STARTED
@@ -229,10 +239,23 @@ const App: React.FC = () => {
     localStorage.setItem('medstudy_progress', JSON.stringify(newAreas));
   };
 
+  // Fix: Added handleDeleteTopic
   const handleDeleteTopic = (areaId: string, topicId: string) => {
     const newAreas = areas.map(a => a.id === areaId ? { ...a, topics: a.topics.filter(t => t.id !== topicId) } : a);
     setAreas(newAreas);
     localStorage.setItem('medstudy_progress', JSON.stringify(newAreas));
+  };
+
+  // Fix: Added handleUpdateFlashcards
+  const handleUpdateFlashcards = (updated: Flashcard[]) => {
+    setFlashcards(updated);
+    localStorage.setItem('medstudy_flashcards', JSON.stringify(updated));
+  };
+
+  // Fix: Added handleUpdateDocs
+  const handleUpdateDocs = (updated: CurriculumDoc[]) => {
+    setDocs(updated);
+    localStorage.setItem('medstudy_docs', JSON.stringify(updated));
   };
 
   const renderContent = () => {
@@ -376,6 +399,10 @@ const App: React.FC = () => {
           setActiveTab={setActiveTab} 
           tabLabels={tabLabels} 
           onUpdateLabel={handleUpdateTabLabel}
+          tabOrder={tabOrder}
+          onUpdateTabOrder={handleUpdateTabOrder}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={handleToggleSidebar}
           isDarkMode={isDarkMode}
           appName={appName}
           appSubtitle={appSubtitle}
@@ -384,7 +411,7 @@ const App: React.FC = () => {
           primaryColor={primaryColor}
         />
         
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 transition-all duration-300">
           <div className="max-w-6xl mx-auto">
             <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md p-4 rounded-3xl border border-white/40 dark:border-slate-800 shadow-sm transition-colors">

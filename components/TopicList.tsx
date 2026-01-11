@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Area, StudyStatus, Topic } from '../types';
 import { getStudyTips } from '../services/gemini';
 
@@ -28,24 +28,65 @@ const TopicList: React.FC<TopicListProps> = ({
   const [tips, setTips] = useState<{ [key: string]: string }>({});
   const [loadingTips, setLoadingTips] = useState<{ [key: string]: boolean }>({});
   
-  // State for editing topic names
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [tempTopicName, setTempTopicName] = useState<string>('');
 
-  // State for observation panel
   const [visibleObservationId, setVisibleObservationId] = useState<string | null>(null);
 
-  // State for adding subtopic (inside a topic)
   const [activeSubTopicInput, setActiveSubTopicInput] = useState<string | null>(null);
   const [tempSubTopic, setTempSubTopic] = useState('');
 
-  // State for adding a new main topic within a subArea group
   const [activeNewTopicInSubArea, setActiveNewTopicInSubArea] = useState<string | null>(null);
   const [newTopicNameInSubArea, setNewTopicNameInSubArea] = useState('');
 
-  // State for global adding new main topic
   const [showAddTopicForm, setShowAddTopicForm] = useState(false);
   const [newTopicForm, setNewTopicForm] = useState({ name: '', subArea: '' });
+
+  // Keyboard focus management
+  const [focusedTopicId, setFocusedTopicId] = useState<string | null>(null);
+
+  const flatVisibleTopics = useMemo(() => {
+    let list: { topic: Topic; areaId: string }[] = [];
+    const targetAreas = selectedArea === 'all' ? areas : areas.filter(a => a.id === selectedArea);
+    targetAreas.forEach(area => {
+      area.topics.forEach(t => {
+        list.push({ topic: t, areaId: area.id });
+      });
+    });
+    return list;
+  }, [selectedArea, areas]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts if user is typing in any input or textarea
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+      const currentIdx = flatVisibleTopics.findIndex(t => t.topic.id === focusedTopicId);
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIdx = (currentIdx + 1) % flatVisibleTopics.length;
+        setFocusedTopicId(flatVisibleTopics[nextIdx].topic.id);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prevIdx = (currentIdx - 1 + flatVisibleTopics.length) % flatVisibleTopics.length;
+        setFocusedTopicId(flatVisibleTopics[prevIdx].topic.id);
+      } else if (e.key === ' ') {
+        if (focusedTopicId) {
+          e.preventDefault();
+          const target = flatVisibleTopics.find(t => t.topic.id === focusedTopicId);
+          if (target) {
+            const currentStatus = target.topic.status;
+            const nextStatus = currentStatus === StudyStatus.COMPLETED ? StudyStatus.NOT_STARTED : StudyStatus.COMPLETED;
+            onStatusChange(target.areaId, target.topic.id, nextStatus);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusedTopicId, flatVisibleTopics, onStatusChange]);
 
   const handleGetTips = async (topic: Topic) => {
     setLoadingTips(prev => ({ ...prev, [topic.id]: true }));
@@ -137,7 +178,15 @@ const TopicList: React.FC<TopicListProps> = ({
 
             <div className="space-y-4">
               {topics.map(topic => (
-                <div key={topic.id} className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-gray-100 dark:border-slate-800 rounded-3xl overflow-hidden transition-all hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-xl group">
+                <div 
+                  key={topic.id} 
+                  onMouseEnter={() => setFocusedTopicId(topic.id)}
+                  className={`bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-gray-100 dark:border-slate-800 rounded-3xl overflow-hidden transition-all group ${
+                    focusedTopicId === topic.id 
+                      ? `ring-4 ring-${area.color}-500/20 border-${area.color}-400 shadow-2xl scale-[1.01] z-10` 
+                      : 'hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-xl'
+                  }`}
+                >
                   <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex-1 group/title flex items-center gap-3">
                       {editingTopicId === topic.id ? (
@@ -159,7 +208,7 @@ const TopicList: React.FC<TopicListProps> = ({
                       ) : (
                         <div className="flex flex-col flex-1">
                           <div className="flex items-center gap-3">
-                            <h5 className="text-lg font-black text-gray-800 dark:text-white leading-tight">
+                            <h5 className={`text-lg font-black leading-tight ${focusedTopicId === topic.id ? `text-${area.color}-700 dark:text-${area.color}-300` : 'text-gray-800 dark:text-white'}`}>
                               {topic.name}
                             </h5>
                             <button 
@@ -241,7 +290,7 @@ const TopicList: React.FC<TopicListProps> = ({
                     </div>
                   </div>
                   
-                  {/* Subtopics Panel (Internal to Topic) */}
+                  {/* Panels stay same... */}
                   {(topic.subTopics?.length || activeSubTopicInput === topic.id) && (
                     <div className="px-6 pb-5 border-t border-gray-50 dark:border-slate-800/50 pt-5 transition-colors">
                        <div className="flex flex-wrap gap-2.5 mb-4">
@@ -282,7 +331,6 @@ const TopicList: React.FC<TopicListProps> = ({
                     </div>
                   )}
 
-                  {/* Observation Panel */}
                   {visibleObservationId === topic.id && (
                     <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-300">
                       <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 rounded-[2rem] p-6 shadow-inner transition-colors">
@@ -308,7 +356,6 @@ const TopicList: React.FC<TopicListProps> = ({
                     </div>
                   )}
 
-                  {/* IA Tips Panel */}
                   {tips[topic.id] && (
                     <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-300">
                       <div className="bg-blue-50/50 dark:bg-blue-900/10 rounded-[2rem] p-6 text-sm text-gray-700 dark:text-slate-300 border border-blue-100 dark:border-blue-900/30 shadow-inner transition-colors">
@@ -324,7 +371,6 @@ const TopicList: React.FC<TopicListProps> = ({
                 </div>
               ))}
 
-              {/* ADD TOPIC IN THIS SPECIFIC SUB-AREA BUTTON */}
               <div className="mt-4 animate-in fade-in duration-500">
                 {activeNewTopicInSubArea === subArea ? (
                   <div className="flex items-center gap-3 p-4 bg-white/40 dark:bg-slate-900/40 border-2 border-dashed border-gray-200 dark:border-slate-800 rounded-3xl">
@@ -462,6 +508,11 @@ const TopicList: React.FC<TopicListProps> = ({
              </button>
           </form>
         )}
+
+        <div className="mb-4 bg-gray-100 dark:bg-slate-800/50 p-4 rounded-2xl flex items-center gap-4 animate-in fade-in duration-700">
+           <span className="text-xl">⌨️</span>
+           <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Use as Setas do Teclado para navegar e Barra de Espaço para concluir temas.</p>
+        </div>
 
         {selectedArea === 'all' ? (
           areas.map(area => renderAreaTopics(area, true))
